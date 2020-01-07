@@ -1,6 +1,27 @@
-plugins {
-    id 'java'
+buildscript {
+    repositories {
+        jcenter()
+        maven { url 'https://plugins.gradle.org/m2/' }
+        mavenLocal()
+    }
+    dependencies {
+        classpath 'io.spring.gradle:spring-release-plugin:0.20.1'
+        classpath 'com.netflix.nebula:nebula-project-plugin:3.4.0'
+    }
+
+    configurations.classpath.resolutionStrategy.cacheDynamicVersionsFor 0, 'minutes'
 }
+
+plugins {
+    id 'java-library'
+}
+
+apply plugin: 'io.spring.license'
+apply plugin: 'io.spring.publishing'
+
+group = 'io.micrometer.keycloak'
+
+description = 'Keycloak SPI providing Micrometer metrics to popular monitoring systems'
 
 repositories {
     mavenCentral()
@@ -24,3 +45,25 @@ dependencies {
 test {
     useJUnitPlatform()
 }
+
+contacts {
+    'jschneider@pivotal.io' {
+        moniker 'Jon Schneider'
+        github 'jkschneider'
+    }
+}
+
+if (project.extensions.findByName('bintray')) {
+    bintray.labels = ['micrometer', 'metrics', 'prometheus', 'keycloak']
+    bintray.packageName = 'micrometer-keycloak'
+}
+
+license {
+    ext.year = Calendar.getInstance().get(Calendar.YEAR)
+}
+
+wrapper {
+    gradleVersion = '5.6.4'
+}
+
+defaultTasks 'build'
