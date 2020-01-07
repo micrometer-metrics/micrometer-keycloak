@@ -1,0 +1,121 @@
+version: 2.1
+orbs:
+  build-tools: circleci/build-tools@2.6.3
+executors:
+  jdk-docker-executor:
+    working_directory: ~/micrometer-keycloak
+    docker:
+      - image: adoptopenjdk/openjdk11:alpine
+
+jobs:
+  build:
+    executor: jdk-docker-executor
+    steps:
+      # necessary for at least restore_cache/save_cache because we're not using CircleCI convenience image
+      - build-tools/install-ci-tools
+      - checkout
+
+      - restore_cache:
+          key: gradle-dependencies-{{ checksum "build.gradle" }}
+
+      - run:
+          name: downloadDependencies
+          command: ./gradlew downloadDependencies --console=plain
+
+      - save_cache:
+          key: gradle-dependencies-{{ checksum "build.gradle" }}
+          paths:
+            - ~/.gradle
+
+      - run:
+          name: run tests
+          command: ./gradlew check test
+
+      - run:
+          name: collect test reports
+          when: always
+          command: |
+            mkdir -p test-results/junit/
+            find . -type f -regex ".*/build/test-results/.*xml" -exec cp {} test-results/junit/ \;
+
+      - store_test_results:
+          path: test-results/
+
+      - store_artifacts:
+          path: test-results/
+
+  deploy:
+    executor: jdk-docker-executor
+    steps:
+      - build-tools/install-ci-tools
+      - run:
+          name: install openssl
+          # command depends on operating system used
+          command: apk add openssl
+      - checkout
+      - restore_cache:
+          key: gradle-dependencies-{{ checksum "build.gradle" }}
+      - setup_remote_docker
+      - deploy:
+          name: Deployment
+          command: sh ./gradle/deploy.sh
+
+  maven-central-sync:
+    executor: jdk-docker-executor
+    steps:
+      - build-tools/install-ci-tools
+      - run:
+          name: install openssl
+          # command depends on operating system used
+          command: apk add openssl
+      - checkout
+      - run:
+          name: Decrypt properties
+          command: openssl enc -d -aes-256-cbc -md sha512 -pbkdf2 -iter 1000 -in gradle.properties.enc -out gradle.properties -pass "pass:$KEY"
+      - deploy:
+          name: Maven Central sync
+          # arbitrarily choose one project to run the `mavenCentralSync` task since all use the same Bintray package
+          command: ./gradlew mavenCentralSync -Prelease.useLastTag=true -x bintrayPublish
+          # Maven Central Sync might take more than 10 minutes per artifact
+          no_output_timeout: 30m
+
+workflows:
+  version: 2
+  build_prs_deploy_snapshots:
+    jobs:
+      - build
+      - deploy:
+          requires:
+            - build
+          filters:
+            branches:
+              only:
+                - master
+                - /\d+\.\d+\.x/
+  build_deploy_releases:
+    jobs:
+      - build:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d+\.\d+\.\d+(-rc\.\d+)?$/
+      - deploy:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-rc\.\d+)?$/
+      - staging-approval:
+          type: approval
+          requires:
+            - deploy
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-rc\.\d+)?$/
+      - maven-central-sync:
+          requires:
+            - staging-approval
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-rc\.\d+)?$/
