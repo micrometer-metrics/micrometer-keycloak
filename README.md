@@ -1,3 +1,5 @@
+# micrometer-keycloak is no longer actively maintained by VMware, Inc.
+
 # Micrometer Keycloak SPI
 
 Inspired by @aerogear's [Keycloak Metrics SPI](https://github.com/aerogear/keycloak-metrics-spi).
